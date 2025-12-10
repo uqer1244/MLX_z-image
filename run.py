@@ -127,17 +127,12 @@ def main():
 
     model = ZImageTransformerMLX(config)
 
-    # 4비트 양자화 모델인지 확인하여 로드 방식 결정 (간단한 체크)
-    # 일반적으로 safetensors 로드 시 구조가 맞으면 알아서 들어갑니다.
-    # 만약 4비트 로드시에는 nn.quantize를 먼저 호출해야 구조가 맞습니다.
-    # 여기서는 파일 경로에 '4bit'가 있거나, config를 체크하는 등의 로직이 필요하지만
-    # 사용자 편의를 위해 일단 무조건 quantize 시도 후 로드 (실패 시 FP16으로 가정 가능하나, 여기선 4비트가 기본이라 가정)
     try:
-        nn.quantize(model, bits=4, group_size=32)  # 일단 4비트 구조로 변경
+        nn.quantize(model, bits=4, group_size=32)
         model.load_weights(os.path.join(args.mlx_model_path, "model.safetensors"))
     except Exception:
         print("⚠️ 4-bit load failed, trying FP16 structure...")
-        model = ZImageTransformerMLX(config)  # 다시 초기화
+        model = ZImageTransformerMLX(config)
         model.load_weights(os.path.join(args.mlx_model_path, "model.safetensors"))
 
     model.eval()

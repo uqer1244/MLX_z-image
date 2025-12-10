@@ -18,7 +18,6 @@ def main():
     if not os.path.exists(args.dest_path):
         os.makedirs(args.dest_path)
 
-    # 1. Config 복사
     config_path = os.path.join(args.model_path, "config.json")
     if not os.path.exists(config_path):
         print("❌ config.json not found.")
@@ -29,16 +28,13 @@ def main():
     with open(os.path.join(args.dest_path, "config.json"), "w") as f:
         json.dump(config, f, indent=4)
 
-    # 2. FP16 모델 로드
     print("📥 Loading FP16 Model...")
     model = ZImageTransformerMLX(config)
     model.load_weights(os.path.join(args.model_path, "model.safetensors"))
 
-    # 3. 양자화 (Quantize)
     print(f"🔨 Quantizing (bits=4, group_size={args.group_size})...")
     nn.quantize(model, bits=4, group_size=args.group_size)
 
-    # 4. 저장
     save_path = os.path.join(args.dest_path, "model.safetensors")
     print(f"💾 Saving quantized model to {save_path}...")
 
