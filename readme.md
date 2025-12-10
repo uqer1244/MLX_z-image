@@ -1,5 +1,4 @@
 
-
 # MLX z-image 🍎
 
 An efficient **MLX implementation** of [Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) optimized for Apple Silicon (M1/M2/M3/M4).
@@ -15,18 +14,18 @@ It is recommended to organize your folders as follows:
 ```text
 MLX_z-image/
 ├── Z-Image-Turbo-MLX-4bit/        # MLX Quantized Weights (Download here)
-├── Z-Image_Turbo/                 # Original PyTorch Model (Download here)
-├── run_mlx .py                    # Inference Script
-├── convert_weights.py             # Script to convert PyTorch weights to MLX
+├── Z-Image-Turbo/                 # Original PyTorch Model (Download here)
+├── run.py                         # Inference Script
+├── convert.py                     # Script to convert PyTorch weights to MLX
 └── quantize.py                    # Script to quantize FP16 model to 4-bit
-```
+````
 
 ## Installation
 
 ### 1\. Clone the repository
 
 ```bash
-git clone https://github.com/uqer1244/MLX_z-image.git
+git clone [https://github.com/uqer1244/MLX_z-image.git](https://github.com/uqer1244/MLX_z-image.git)
 cd MLX_z-image
 ```
 
@@ -55,7 +54,7 @@ Download the 4-bit converted weights from [uqer1244/MLX-z-image](https://hugging
 # Install CLI if needed
 pip install huggingface_hub
 
-# Download to 'checkpoints' folder
+# Download to 'Z-Image-Turbo-MLX-4bit' folder
 huggingface-cli download uqer1244/MLX-z-image --local-dir Z-Image-Turbo-MLX-4bit
 ```
 
@@ -64,20 +63,20 @@ huggingface-cli download uqer1244/MLX-z-image --local-dir Z-Image-Turbo-MLX-4bit
 Download the original [Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) to use its VAE and Text Encoder.
 
 ```bash
-# Download to 'base_model' folder
+# Download to 'Z-Image-Turbo' folder
 huggingface-cli download Tongyi-MAI/Z-Image-Turbo --local-dir Z-Image-Turbo
 ```
 
 ### 3\. Run Inference
 
-Run the `run_mlx.py` script. Make sure to point to both model paths.
+Run the `run.py` script. Make sure to point to both model paths.
 
 ```bash
 python run.py \
   --prompt "A futuristic city with flying cars, cinematic lighting, 8k" \
-  --mlx_model_path "checkpoints" \
-  --pt_model_id "base_model" \
-  --output "result.png" \
+  --mlx_model_path "Z-Image-Turbo-MLX-4bit" \
+  --pt_model_id "Z-Image-Turbo" \
+  --output "res.png" \
   --steps 5
 ```
 
@@ -85,7 +84,7 @@ python run.py \
 
 | Argument | Description | Default                  |
 | :--- | :--- |:-------------------------|
-| `--prompt` | Text prompt for generation | *Astronaut...*           |
+| `--prompt` | Text prompt for generation | *Astronaut...* |
 | `--mlx_model_path` | Path to the MLX weights folder | `Z-Image-Turbo-MLX-4bit` |
 | `--pt_model_id` | Path to the Base Model (or HF ID) | `Z-Image-Turbo`          |
 | `--output` | Output filename | `res.png`                |
@@ -94,6 +93,7 @@ python run.py \
 | `--width` | Image width | `1024`                   |
 
 -----
+
 ## Todo & Roadmap
 
 We are actively working on making this implementation pure MLX and bug-free.
@@ -129,6 +129,3 @@ python quantize.py \
 
   - Original Model: [Tongyi-MAI/Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)
   - MLX Framework: [Apple Machine Learning Research](https://github.com/ml-explore/mlx)
-
-
-🍎
