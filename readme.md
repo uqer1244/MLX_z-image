@@ -80,8 +80,8 @@ Download the 4-bit converted weights from [uqer1244/MLX-z-image](https://hugging
 # Install CLI if needed
 pip install huggingface_hub
 
-# Download to 'Z-Image-Turbo-MLX-4bit' folder
-huggingface-cli download uqer1244/MLX-z-image --local-dir Z-Image-Turbo-MLX-4bit
+# Download to 'Z-Image-Turbo-MLX' folder
+huggingface-cli download uqer1244/MLX-z-image --local-dir Z-Image-Turbo-MLX
 ```
 
 ### 2\. Download Base Model (Original)
