@@ -13,11 +13,11 @@ It is recommended to organize your folders as follows:
 
 ```text
 MLX_z-image/
+├── converting/                    # Scripts to convert PyTorch to MLX
 ├── Z-Image-Turbo-MLX-4bit/        # MLX Quantized Weights 
-├── Z-Image-Turbo/                 # Original PyTorch Model 
+├── mlx_text_encoder.py            # MLX converted Text Encoder
 ├── run.py                         # Inference Script
 ├── mlx_z_image.py                 # MLX converted transformer
-├── convert.py                     # Script to convert PyTorch weights to MLX
 └── quantize.py                    # Script to quantize FP16 model to 4-bit
 ````
 ## 📊 Performance & Gallery
