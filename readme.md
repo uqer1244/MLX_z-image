@@ -125,7 +125,7 @@ We are actively working on making this implementation pure MLX and bug-free.
     - [ ] Tokenizer
     - [ ] Scheduler
     - [x] Transformer
-    - [ ] VAE
+    - [x] VAE (converting to **CoreML** is now working on)
   - [ ] **LoRA Support**: Add support for loading and applying LoRA adapters for style customization.
 
 -----
