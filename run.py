@@ -45,11 +45,10 @@ def calculate_shift(image_seq_len, base_seq_len=256, max_seq_len=4096, base_shif
 def main():
     parser = argparse.ArgumentParser(description="Z-Image-Turbo MLX Local Runner")
 
-    # 1. 모델 경로 설정 (가장 중요)
+
     parser.add_argument("--model_path", type=str, default="Z-Image-Turbo-MLX",
                         help="Local folder containing the full MLX package")
 
-    # 2. 다운로드용 Repo ID (로컬에 없을 때만 사용)
     parser.add_argument("--repo_id", type=str, default="uqer1244/MLX-z-image",
                         help="HF Repo ID to download from if local path is empty (e.g., User/Model)")
 
@@ -97,7 +96,6 @@ def main():
     print("\n[Phase 1] Processing Text (MLX 4-bit)...")
     phase1_start = time.time()
 
-    # 경로 정의
     te_path = os.path.join(args.model_path, "text_encoder")
     tok_path = os.path.join(args.model_path, "tokenizer")
 
