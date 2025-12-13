@@ -16,8 +16,9 @@ MLX_z-image/
 ├── converting/                    # Scripts to convert PyTorch to MLX
 ├── Z-Image-Turbo-MLX-4bit/        # MLX Quantized Weights 
 ├── mlx_text_encoder.py            # MLX converted Text Encoder
-├── run.py                         # Inference Script
 ├── mlx_z_image.py                 # MLX converted transformer
+├── run.py                         # Inference Script
+├── prompt.txt                     # prompt
 └── quantize.py                    # Script to quantize FP16 model to 4-bit
 ````
 ## 📊 Performance & Gallery
@@ -98,20 +99,20 @@ Point the `--model_path` to your downloaded folder.
 python run.py \
   --model_path "Z-Image-Turbo-MLX" \
   --prompt "semi-realistic anime style female warrior, detailed armor, backlighting" \
-  --output "result.png" \
+  --output "res.png" \
   --steps 5
 ```
 
 ### Options
 
-| Argument | Description | Default                  |
-| :--- | :--- |:-------------------------|
-| `--prompt` | Text prompt for image generation | *...anime style...*      |
-| `--model_path` | Path to local model folder | `Z-Image-Turbo-MLX-4bit` |
-| `--repo_id` | Hugging Face Repo ID (for auto-download) | `None`                   |
-| `--output` | Output image filename | `result.png`             |
-| `--steps` | Number of inference steps | `5`                      |
-| `--height` / `--width` | Image resolution (must be divisible by 8) | `1024`                   |
+| Argument | Description | Default             |
+| :--- | :--- |:--------------------|
+| `--prompt` | Text prompt for image generation | *...anime style...* |
+| `--model_path` | Path to local model folder | `Z-Image-Turbo-MLX` |
+| `--repo_id` | Hugging Face Repo ID (for auto-download) | `None`              |
+| `--output` | Output image filename | `res.png`           |
+| `--steps` | Number of inference steps | `5`                 |
+| `--height` / `--width` | Image resolution (must be divisible by 8) | `1024`              |
 
 -----
 
@@ -130,26 +131,6 @@ We are actively working on making this implementation pure MLX and bug-free.
 
 -----
 
-## Advanced: Manual Conversion
-
-If you want to convert the original PyTorch weights yourself (instead of downloading the pre-converted ones), follow these steps.
-
-**1. Convert PyTorch to MLX (FP16)**
-
-```bash
-python convert.py \
-  --model_id "Z-Image-Turbo" \
-  --dest_path "Z-Image-Turbo-MLX"
-```
-
-**2. Quantize to 4-bit**
-
-```bash
-python quantize.py \
-  --model_path "Z-Image-Turbo-MLX" \
-  --dest_path "Z-Image-Turbo-MLX-4bit" \
-  --group_size 32
-```
 
 ## Acknowledgements
 
