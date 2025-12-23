@@ -120,10 +120,10 @@ class ZImagePipeline:
         global_start = time.time()
 
         # ----------------------------------------------------------------
-        # [Phase 1] Text Encoding (BF16)
+        # [Phase 1] Text Encoding (MLX) -> [수정됨] 4-bit Quantization 적용
         # ----------------------------------------------------------------
         t_start = time.time()
-        print(f"[Phase 1] Text Encoding (BF16)...", end=" ", flush=True)
+        print(f"[Phase 1] Text Encoding (4-bit)...", end=" ", flush=True)
 
         tokenizer_path = os.path.join(self.model_path, "tokenizer")
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
@@ -132,9 +132,14 @@ class ZImagePipeline:
             te_config = json.load(f)
 
         text_encoder = TextEncoderMLX(te_config)
+
         te_weights = load_sharded_weights(self.text_encoder_path)
         text_encoder.load_weights(list(te_weights.items()))
         del te_weights
+
+        nn.quantize(text_encoder, bits=4, group_size=32)
+
+        mx.eval(text_encoder)
 
         messages = [{"role": "user", "content": prompt}]
         try:
