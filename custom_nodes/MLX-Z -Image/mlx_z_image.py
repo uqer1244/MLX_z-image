@@ -110,7 +110,7 @@ class Attention(nn.Module):
         # Result: (1, L, 1, 64) -> Half of the total head dimension
         return mx.concatenate([args_h, args_w, args_t], axis=-1)
 
-    def __call__(self, x, mask=None, positions=None):
+    def __call__(self, x, mask=None, positions=None, cos=None, sin=None):
         B, L, D = x.shape
 
         q = self.to_q(x).reshape(B, L, self.nheads, self.head_dim)
@@ -120,14 +120,16 @@ class Attention(nn.Module):
         q = self.norm_q(q)
         k = self.norm_k(k)
 
-        if positions is not None:
-            # 1. Get fused angles (Args)
-            args = self._get_fused_args(positions)  # (1, L, 1, D/2)
+        if cos is None or sin is None:
+            if positions is not None:
+                # 1. Get fused angles (Args)
+                args = self._get_fused_args(positions)  # (1, L, 1, D/2)
 
-            # 2. Calculate Sin/Cos (Performed once for the entire chunk)
-            cos = mx.cos(args)
-            sin = mx.sin(args)
+                # 2. Calculate Sin/Cos (Performed once for the entire chunk)
+                cos = mx.cos(args)
+                sin = mx.sin(args)
 
+        if cos is not None and sin is not None:
             # 3. Rotate entire tensor (No Split, No Loop)
             # [cite_start]Indexing 0::2 and 1::2 are memory views[cite: 1], so copy cost is near zero.
             q1 = q[..., 0::2]
@@ -160,7 +162,7 @@ class ZImageTransformerBlock(nn.Module):
         self.ffn_norm2 = RMSNorm(dim)
         if modulation: self.adaLN_modulation = nn.Linear(256, 4 * dim, bias=True)
 
-    def __call__(self, x, mask, positions, adaln_input=None):
+    def __call__(self, x, mask, positions, adaln_input=None, cos=None, sin=None):
         if self.modulation:
             chunks = self.adaLN_modulation(adaln_input)
             scale_msa, gate_msa, scale_mlp, gate_mlp = mx.split(chunks, 4, axis=-1)
@@ -168,12 +170,12 @@ class ZImageTransformerBlock(nn.Module):
             scale_mlp, gate_mlp = scale_mlp[..., None, :], gate_mlp[..., None, :]
 
             norm_x = self.attention_norm1(x) * (1 + scale_msa)
-            x = x + mx.tanh(gate_msa) * self.attention_norm2(self.attention(norm_x, mask, positions))
+            x = x + mx.tanh(gate_msa) * self.attention_norm2(self.attention(norm_x, mask, positions, cos, sin))
 
             norm_ffn = self.ffn_norm1(x) * (1 + scale_mlp)
             x = x + mx.tanh(gate_mlp) * self.ffn_norm2(self.feed_forward(norm_ffn))
         else:
-            x = x + self.attention_norm2(self.attention(self.attention_norm1(x), mask, positions))
+            x = x + self.attention_norm2(self.attention(self.attention_norm1(x), mask, positions, cos, sin))
             x = x + self.ffn_norm2(self.feed_forward(self.ffn_norm1(x)))
         return x
 
@@ -209,7 +211,11 @@ class ZImageTransformerMLX(nn.Module):
         self.context_refiner = [ZImageTransformerBlock(config, i, False) for i in range(config['n_refiner_layers'])]
         self.layers = [ZImageTransformerBlock(config, i, True) for i in range(config['n_layers'])]
 
-    def __call__(self, x, t, cap_feats, x_pos, cap_pos, x_mask=None, cap_mask=None):
+    def prepare_rope(self, positions):
+        args = self.layers[0].attention._get_fused_args(positions)
+        return mx.cos(args), mx.sin(args)
+
+    def __call__(self, x, t, cap_feats, x_pos, cap_pos, cos=None, sin=None, x_mask=None, cap_mask=None):
         temb = self.t_embedder(t * self.t_scale)
         x = self.x_embedder(x)
         if x_mask is not None: x = mx.where(x_mask[..., None], self.x_pad_token, x)
@@ -217,12 +223,20 @@ class ZImageTransformerMLX(nn.Module):
         cap_feats = self.cap_embedder.layers[1](self.cap_embedder.layers[0](cap_feats))
         if cap_mask is not None: cap_feats = mx.where(cap_mask[..., None], self.cap_pad_token, cap_feats)
 
-        for l in self.noise_refiner: x = l(x, None, x_pos, temb)
-        for l in self.context_refiner: cap_feats = l(cap_feats, None, cap_pos, None)
+        x_len = x.shape[1]
+        x_cos, x_sin, cap_cos, cap_sin = None, None, None, None
+        if cos is not None and sin is not None:
+             x_cos = cos[:, :x_len, ...]
+             x_sin = sin[:, :x_len, ...]
+             cap_cos = cos[:, x_len:, ...]
+             cap_sin = sin[:, x_len:, ...]
+
+        for l in self.noise_refiner: x = l(x, None, x_pos, temb, cos=x_cos, sin=x_sin)
+        for l in self.context_refiner: cap_feats = l(cap_feats, None, cap_pos, None, cos=cap_cos, sin=cap_sin)
 
         unified = mx.concatenate([x, cap_feats], axis=1)
         unified_pos = mx.concatenate([x_pos, cap_pos], axis=1)
 
         unified_mask = None
-        for l in self.layers: unified = l(unified, unified_mask, unified_pos, temb)
+        for l in self.layers: unified = l(unified, unified_mask, unified_pos, temb, cos=cos, sin=sin)
         return self.final_layer(unified[:, :x.shape[1], :], temb)
