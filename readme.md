@@ -13,10 +13,12 @@ It is recommended to organize your folders as follows:
 
 ```text
 MLX_z-image/
-├── converting/                    # Scripts to convert PyTorch to MLX
-├── Z-Image-Turbo-MLX/             # MLX Weights 
+├── converting/                    # Scripts to convert PyTorch to MLX (just non functional files)
+├── Z-Image-Turbo-MLX/             # MLX Weights (auto download on first run)
 ├── mlx_text_encoder.py            # MLX converted Text Encoder
 ├── mlx_z_image.py                 # MLX converted transformer
+├── check_lora.py                  # Checking lora is suitable for mlx-z-image
+├── lora_utils.py                  # Apply lora
 ├── run.py                         # Run Script
 ├── prompt.txt                     # prompt
 └── mlx_pipeline.py                # mlx Pipeline
