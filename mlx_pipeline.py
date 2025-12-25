@@ -120,7 +120,7 @@ class ZImagePipeline:
         global_start = time.time()
 
         # ----------------------------------------------------------------
-        # [Phase 1] Text Encoding (MLX) -> [수정됨] 4-bit Quantization 적용
+        # [Phase 1] Text Encoding (MLX) -> 4-bit Quantization
         # ----------------------------------------------------------------
         t_start = time.time()
         print(f"[Phase 1] Text Encoding (4-bit)...", end=" ", flush=True)
@@ -133,15 +133,12 @@ class ZImagePipeline:
 
         text_encoder = TextEncoderMLX(te_config)
 
-        # 가중치 로드
         te_weights = load_sharded_weights(self.text_encoder_path)
         text_encoder.load_weights(list(te_weights.items()))
         del te_weights
 
-        # [핵심 수정] 텍스트 인코더도 4비트로 압축! (메모리 폭발 방지)
         nn.quantize(text_encoder, bits=4, group_size=32)
 
-        # 압축된 가중치 정리 (선택사항이나 안전을 위해)
         mx.eval(text_encoder)
 
         messages = [{"role": "user", "content": prompt}]
@@ -152,7 +149,6 @@ class ZImagePipeline:
 
         inputs = tokenizer(prompt_fmt, padding="max_length", max_length=512, truncation=True, return_tensors="np")
 
-        # 인코더 실행
         prompt_embeds = text_encoder(mx.array(inputs["input_ids"]))
         mx.eval(prompt_embeds)
 
@@ -162,14 +158,13 @@ class ZImagePipeline:
                                                   axis=1)
         cap_feats_mx = mx.array(cap_feats_np).astype(mx.bfloat16)
 
-        # 메모리 정리
         del text_encoder, tokenizer
         mx.clear_cache()
         gc.collect()
         print(f"Done ({time.time() - t_start:.2f}s)")
 
         # ----------------------------------------------------------------
-        # [Phase 2] Transformer Loading (4-bit Compatible Mode)
+        # [Phase 2] Transformer Loading (4-bit)
         # ----------------------------------------------------------------
         t_start = time.time()
         trans_path = os.path.join(self.model_path, "transformer")

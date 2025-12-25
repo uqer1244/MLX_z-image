@@ -120,7 +120,7 @@ class ZImagePipeline:
         global_start = time.time()
 
         # ----------------------------------------------------------------
-        # [Phase 1] Text Encoding (MLX) -> [수정됨] 4-bit Quantization 적용
+        # [Phase 1] Text Encoding (MLX) -> 4-bit Quantization
         # ----------------------------------------------------------------
         t_start = time.time()
         print(f"[Phase 1] Text Encoding (4-bit)...", end=" ", flush=True)
@@ -148,6 +148,7 @@ class ZImagePipeline:
             prompt_fmt = prompt
 
         inputs = tokenizer(prompt_fmt, padding="max_length", max_length=512, truncation=True, return_tensors="np")
+
         prompt_embeds = text_encoder(mx.array(inputs["input_ids"]))
         mx.eval(prompt_embeds)
 
@@ -163,7 +164,7 @@ class ZImagePipeline:
         print(f"Done ({time.time() - t_start:.2f}s)")
 
         # ----------------------------------------------------------------
-        # [Phase 2] Transformer Loading (4-bit Compatible Mode)
+        # [Phase 2] Transformer Loading (4-bit)
         # ----------------------------------------------------------------
         t_start = time.time()
         trans_path = os.path.join(self.model_path, "transformer")

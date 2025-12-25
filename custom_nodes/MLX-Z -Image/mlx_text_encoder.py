@@ -23,13 +23,13 @@ class Attention(nn.Module):
         self.num_key_value_heads = config["num_key_value_heads"]
         self.rope_theta = config.get("rope_theta", 1000000.0)
 
-        # Projection (Bias=False)
+        # Projection
         self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=False)
         self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
         self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
         self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
 
-        # Q/K Norm (Head Dim 기준)
+        # Q/K Norm
         self.q_norm = RMSNorm(self.head_dim, eps=config.get("rms_norm_eps", 1e-6))
         self.k_norm = RMSNorm(self.head_dim, eps=config.get("rms_norm_eps", 1e-6))
 
@@ -73,8 +73,6 @@ class Attention(nn.Module):
         k = k.transpose(0, 2, 1, 3)
         v = v.transpose(0, 2, 1, 3)
 
-        # [핵심 수정] GQA (Grouped Query Attention) 처리
-        # Key/Value 헤드 수가 Query 헤드 수보다 적을 경우, 복제(Repeat)하여 맞춰줍니다.
         n_rep = self.num_heads // self.num_key_value_heads
         if n_rep > 1:
             k = mx.repeat(k, n_rep, axis=1)

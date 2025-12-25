@@ -31,6 +31,36 @@ custom_nodes/
 -----
 
 
+
+
+# If you use ComfyUI desktop app
+
+1. Make Directory on your ComfyUI/custom_nodes 
+
+<img src="img/t1.png" width="256">
+
+2. In ComfyUI app, go to consol -> terminal
+
+<img src="img/t.png" width="256">
+
+
+then, 
+```bash
+cd custom_nodes/MLX_Z_Image/
+```
+
+```bash
+pip install -r requirements.txt
+```
+<img src="img/t2.png" width="256">
+
+Restart ComfyUI app
+
+then, custom node appear
+
+<img src="img/t3.png" width="256">
+
+
 ## TODO
 
   - [ ] **Multiple LoRA**: Able to apply mutiple LoRA to node.
