@@ -116,7 +116,7 @@ class TransformerBlock(nn.Module):
         return out
 
 
-class Qwen2Model(nn.Module):
+class Qwen3Model(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.embed_tokens = nn.Embedding(config["vocab_size"], config["hidden_size"])
@@ -126,6 +126,8 @@ class Qwen2Model(nn.Module):
     def __call__(self, input_ids):
         x = self.embed_tokens(input_ids)
         B, L = input_ids.shape
+
+        # Causal Mask (Left-to-Right)
         mask = mx.triu(mx.full((L, L), -1e9), k=1)
 
         hidden_states = []
@@ -142,7 +144,7 @@ class Qwen2Model(nn.Module):
 class TextEncoderMLX(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.model = Qwen2Model(config)
+        self.model = Qwen3Model(config)
 
     def __call__(self, input_ids):
         return self.model(input_ids)

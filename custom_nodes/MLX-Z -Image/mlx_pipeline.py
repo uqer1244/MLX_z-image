@@ -100,6 +100,7 @@ class MLXFlowMatchEulerScheduler:
 # =========================================
 # Main Pipeline Class
 # =========================================
+
 class ZImagePipeline:
     def __init__(self,
                  model_path="Z-Image-Turbo-MLX",
@@ -120,24 +121,34 @@ class ZImagePipeline:
         global_start = time.time()
 
         # ----------------------------------------------------------------
-        # [Phase 1] Text Encoding (MLX) -> 4-bit Quantization
+        # [Phase 1] Text Encoding
         # ----------------------------------------------------------------
         t_start = time.time()
-        print(f"[Phase 1] Text Encoding (4-bit)...", end=" ", flush=True)
+        print(f"[Phase 1] Text Encoding...", end=" ", flush=True)
 
         tokenizer_path = os.path.join(self.model_path, "tokenizer")
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
 
-        with open(os.path.join(self.text_encoder_path, "config.json"), "r") as f:
+        te_config_path = os.path.join(self.text_encoder_path, "config.json")
+        with open(te_config_path, "r") as f:
             te_config = json.load(f)
 
         text_encoder = TextEncoderMLX(te_config)
 
-        te_weights = load_sharded_weights(self.text_encoder_path)
-        text_encoder.load_weights(list(te_weights.items()))
-        del te_weights
+        quantized_weights_path = os.path.join(self.text_encoder_path, "model.safetensors")
 
-        nn.quantize(text_encoder, bits=4, group_size=32)
+        if os.path.exists(quantized_weights_path):
+            print(f"(Fast Load: Pre-Quantized)...", end=" ", flush=True)
+
+            nn.quantize(text_encoder, bits=4, group_size=32)
+            text_encoder.load_weights(quantized_weights_path)
+
+        else: #Legacy support
+            print(f"(Slow Load: On-the-fly Quantization)...", end=" ", flush=True)
+            te_weights = load_sharded_weights(self.text_encoder_path)
+            text_encoder.load_weights(list(te_weights.items()))
+            del te_weights
+            nn.quantize(text_encoder, bits=4, group_size=32)
 
         mx.eval(text_encoder)
 
