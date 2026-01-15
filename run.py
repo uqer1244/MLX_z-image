@@ -10,7 +10,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--height", type=int, default=1024)
     parser.add_argument("--width", type=int, default=1024)
-    parser.add_argument("--lora", type=str, default=None)
+    parser.add_argument("--lora_path", type=str, default="")
     parser.add_argument("--lora_scale", type=float, default=1.0)
     args = parser.parse_args()
 
@@ -30,8 +30,8 @@ def main():
         height=args.height,
         steps=args.steps,
         seed=args.seed,
-        lora_path = "",
-        lora_scale = 1.0
+        lora_path = args.lora_path,
+        lora_scale = args.lora_scale
     )
 
     image.save(args.output)
