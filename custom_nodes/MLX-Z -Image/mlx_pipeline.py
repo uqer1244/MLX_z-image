@@ -109,9 +109,22 @@ class ZImagePipeline:
         self.text_encoder_path = text_encoder_path
         self.repo_id = repo_id
 
+        self.model_path = model_path
+        self.text_encoder_path = text_encoder_path
+        self.repo_id = repo_id
+
         if not os.path.exists(self.model_path):
+            print(f"Enabling High-Speed Download (hf_transfer)...")
+            os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+
             print(f"Downloading base model from {self.repo_id}...")
-            snapshot_download(repo_id=self.repo_id, local_dir=self.model_path)
+            try:
+                snapshot_download(repo_id=self.repo_id, local_dir=self.model_path)
+            except Exception as e:
+
+                print(f"High-Speed download failed ({e}). Falling back to standard download.")
+                os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+                snapshot_download(repo_id=self.repo_id, local_dir=self.model_path)
 
     def generate(self, prompt, width=1024, height=1024, steps=9, seed=42, lora_path=None, lora_scale=1.0):
         mx.set_cache_limit(0)

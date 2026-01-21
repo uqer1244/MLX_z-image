@@ -7,3 +7,5 @@ huggingface_hub
 Pillow
 safetensors
 accelerate
+hf_transfer
+tqdm
