@@ -46,6 +46,41 @@ Uncurated samples generated directly on a Mac using the 4-bit quantized model.
 |:-----------------------------------:|
 | <img src="img/res.png" width="512"> | 
 
+## Technical Highlights
+
+I implemented a **Single-Stream Z-Image Transformer** fully based on MLX, optimizing specifically for the **Unified Memory Architecture** of Apple Silicon.
+
+### 1. Linear Projection Fusion (QKV Optimization)
+In standard PyTorch implementations, Q, K, and V projections are often performed sequentially:
+
+```python
+q = x @ W_q, k = x @ W_k, v = x @ W_v  # 3 Memory Accesses
+
+```
+
+I fused these weights into a single tensor to minimize memory reads:
+
+```python
+qkv = x @ W_qkv  # 1 Memory Access
+
+```
+
+This is crucial for LLMs and Diffusion models on Mac, where **memory bandwidth** often becomes the bottleneck before compute power.
+
+### 2. Hardware-Accelerated Flash Attention
+
+I utilize MLX's native kernel `mx.fast.scaled_dot_product_attention`. This operation runs directly on the GPU using optimized Metal kernels, avoiding the creation of large intermediate attention maps. This allows for higher resolution generation without OOM (Out Of Memory) errors.
+
+### 3. Loop-Invariant RoPE Caching
+
+The denoising process involves iterative steps, but the **spatial grid (H, W)** of the image latent remains constant. Instead of recalculating rotary embeddings at every step.
+
+* **Pre-compute** Cosine/Sine tables for the maximum sequence length before the loop.
+* **Cache** them in VRAM.
+* **Pass** the cached tensors to the compiled step function.
+
+This reduces the computational overhead of the `ApplyRoPE` operation to near zero during sampling.
+
 
 ## Installation
 
