@@ -1,5 +1,4 @@
 import os
-import argparse
 import json
 import torch
 import numpy as np
@@ -10,7 +9,7 @@ from safetensors.torch import load_file as load_pt_file
 from mlx_z_image import ZImageTransformerMLX
 from tqdm import tqdm
 
-# From https://huggingface.co/Tongyi-MAI/Z-Image-Turbo/blob/main/transformer/config.json
+# Model configuration based on the Z-Image-Turbo transformer config
 config = {
     "_class_name": "ZImageTransformer2DModel",
     "_diffusers_version": "0.36.0.dev0",
@@ -32,18 +31,16 @@ config = {
     "nheads": 30,
 }
 
-
-# Helpers functions to revert ComfyUI single file model to diffusers format state_dict
-# Some keys are already in the target naming, but i'll revert them nonetheless to use
-# the original code as-is. Undo what is done here:
-# https://huggingface.co/Comfy-Org/z_image_turbo/blob/main/z_image_convert_original_to_comfy.py
 def remap_qkv(key, state_dict):
+    """
+    Splits combined QKV weights from ComfyUI format back into separate
+    to_q, to_k, and to_v weights for Diffusers compatibility.
+    """
     weight = state_dict.pop(key)
     to_q, to_k, to_v = weight.chunk(3, dim=0)
     state_dict[key.replace(".qkv.", ".to_q.")] = to_q
     state_dict[key.replace(".qkv.", ".to_k.")] = to_k
     state_dict[key.replace(".qkv.", ".to_v.")] = to_v
-
 
 replace_keys = {
     "final_layer.": "all_final_layer.2-1.",
@@ -54,18 +51,21 @@ replace_keys = {
     ".attention.out.weight": ".attention.to_out.0.weight",
 }
 
-
 def remap_keys(key, state_dict):
+    """
+    Renames keys from ComfyUI specific naming to match the
+    expected model architecture.
+    """
     new_key = key
     for r, rr in replace_keys.items():
         new_key = new_key.replace(r, rr)
     state_dict[new_key] = state_dict.pop(key)
 
-
-# Torch to MLX converter function from https://github.com/uqer1244/MLX_z-image/blob/master/converting/convert.py
 def map_key_and_convert(key, tensor):
-    # PyTorch Tensor -> Numpy (Float32)
-    # BF16 변환은 나중에 MLX array 생성 시 수행
+    """
+    Converts PyTorch tensors to MLX arrays and maps key names
+    to align with the ZImageTransformerMLX structure.
+    """
     if isinstance(tensor, torch.Tensor):
         val = tensor.detach().cpu().float().numpy()
     else:
@@ -73,7 +73,7 @@ def map_key_and_convert(key, tensor):
 
     new_key = key
 
-    # 키 매핑 로직 (기존과 동일)
+    # Specific key mapping logic for transformer components
     if "t_embedder.mlp.0" in key:
         new_key = key.replace("t_embedder.mlp.0", "t_embedder.linear1")
     elif "t_embedder.mlp.2" in key:
@@ -96,47 +96,29 @@ def map_key_and_convert(key, tensor):
     elif "adaLN_modulation.1" in key and "final" not in key:
         new_key = key.replace("adaLN_modulation.1", "adaLN_modulation")
 
-    # Changed to a tuple from original code to allow loading without saving to disk
-    # also remove the "model.diffusion_model." prefix
+    # Remove the diffusion model prefix and cast to BF16
     return (
         new_key.replace("model.diffusion_model.", ""),
         mx.array(val).astype(mx.bfloat16),
     )
 
-
 def main():
-    parser = argparse.ArgumentParser(
-        description="Convert and Quantize ZIT AIO safetensors to MLX model in 4-bit"
-    )
-    parser.add_argument(
-        "--src_model",
-        type=str,
-        default="comfy.safetensors",
-        help="Path to ZIT model in ComfyUI format",
-    )
-    parser.add_argument(
-        "--dst_model",
-        type=str,
-        default="mlx.safetensors",
-        help="Path to save quantized model in mlx format",
-    )
-    parser.add_argument(
-        "--group_size", type=int, default=32, help="Group size for quantization"
-    )
-    args = parser.parse_args()
+    # Configuration: Modify these variables directly
+    src_model = "comfy.safetensors"
+    dst_model = "mlx_model_4bit.safetensors"
+    group_size = 32
 
-    print("Starting conversion!")
+    print("Starting conversion process")
+    print(f"Loading {src_model}...")
 
-    print(f"Loading {args.src_model} file...")
+    # Load original weights using safetensors
+    pt_weights = load_pt_file(src_model)
 
-    pt_weights = load_pt_file(args.src_model)
-
-    # Remove an unexpected key. TODO: figure out from where it cames.
+    # Remove problematic keys if present
     if "model.diffusion_model.norm_final.weight" in pt_weights.keys():
         del(pt_weights["model.diffusion_model.norm_final.weight"])
 
-    print("Reverting ComfyUI format...")
-
+    print("Reverting ComfyUI format to standard naming...")
     keys = list(pt_weights.keys())
 
     for k in tqdm(keys):
@@ -145,29 +127,23 @@ def main():
         else:
             remap_keys(k, pt_weights)
 
-    print("Converting to MLX...")
-
+    print("Converting weights to MLX format...")
     mlx_weights = []
-
     for k, v in tqdm(pt_weights.items()):
         mlx_weights.append(map_key_and_convert(k, v))
 
-    print("Loading converted weights...")
-
+    print("Initializing MLX model and loading weights...")
     model = ZImageTransformerMLX(config)
     model.load_weights(mlx_weights)
 
-    print(f"Quantizing (bits=4, group_size={args.group_size})...")
+    print(f"Applying 4-bit quantization (Group Size: {group_size})...")
+    nn.quantize(model, bits=4, group_size=group_size)
 
-    nn.quantize(model, bits=4, group_size=args.group_size)
-
-    print(f"Saving {args.dst_model} file...")
-
+    print(f"Saving quantized model to {dst_model}...")
     quant_weights = dict(mlx.utils.tree_flatten(model.parameters()))
-    mx.save_safetensors(args.dst_model, quant_weights)
+    mx.save_safetensors(dst_model, quant_weights)
 
-    print("Done!")
-
+    print("Conversion and quantization completed successfully.")
 
 if __name__ == "__main__":
     main()
