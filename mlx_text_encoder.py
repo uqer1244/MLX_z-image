@@ -50,28 +50,14 @@ class Attention(nn.Module):
         q = self.q_norm(q)
         k = self.k_norm(k)
 
-        # 4. RoPE
-        def apply_rope(x, theta):
-            dim = x.shape[-1]
-            half = dim // 2
-            freqs = mx.exp(-mx.log(theta) * mx.arange(0, half, dtype=mx.float32) / half)
-            pos = mx.arange(L, dtype=mx.float32)
-
-            args = pos[:, None] * freqs[None, :]
-            cos = mx.cos(args).reshape(L, 1, half)
-            sin = mx.sin(args).reshape(L, 1, half)
-
-            x1 = x[..., :half]
-            x2 = x[..., half:]
-            return mx.concatenate([x1 * cos - x2 * sin, x1 * sin + x2 * cos], axis=-1)
-
-        q = apply_rope(q, self.rope_theta)
-        k = apply_rope(k, self.rope_theta)
-
-        # 5. Transpose for Attention (B, H, L, D)
+        # 4. Transpose for Attention (B, H, L, D)
         q = q.transpose(0, 2, 1, 3)
         k = k.transpose(0, 2, 1, 3)
         v = v.transpose(0, 2, 1, 3)
+
+        # 5. Fast RoPE (traditional=False)
+        q = mx.fast.rope(q, dims=self.head_dim, traditional=False, base=self.rope_theta, scale=1.0, offset=0)
+        k = mx.fast.rope(k, dims=self.head_dim, traditional=False, base=self.rope_theta, scale=1.0, offset=0)
 
         n_rep = self.num_heads // self.num_key_value_heads
         if n_rep > 1:

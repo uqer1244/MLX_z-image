@@ -44,6 +44,7 @@ class FeedForward(nn.Module):
 
 
 class Attention(nn.Module):
+
     def __init__(self, dim: int, nheads: int, rope_theta: float = 256.0, eps: float = 1e-5):
         super().__init__()
         self.nheads = nheads
@@ -64,12 +65,39 @@ class Attention(nn.Module):
         self.freqs_cache = {}
 
     def fuse_qkv(self):
-        if self.to_qkv is not None: return
-        w_q, w_k, w_v = self.to_q.weight, self.to_k.weight, self.to_v.weight
-        fused_weight = mx.concatenate([w_q, w_k, w_v], axis=0)
-        in_dim, out_dim = self.to_q.weight.shape[1], self.to_q.weight.shape[0] * 3
-        self.to_qkv = nn.Linear(in_dim, out_dim, bias=False)
-        self.to_qkv.weight = fused_weight
+        if self.to_qkv is not None:
+            return
+
+        if isinstance(self.to_q, nn.QuantizedLinear):
+            bits = self.to_q.bits
+            group_size = self.to_q.group_size
+            num_groups = self.to_q.scales.shape[1]
+            input_dims = num_groups * group_size
+            output_dims = self.to_q.weight.shape[0]
+            
+            has_bias = hasattr(self.to_q, "biases")
+            
+            fused_weight = mx.concatenate([self.to_q.weight, self.to_k.weight, self.to_v.weight], axis=0)
+            fused_scales = mx.concatenate([self.to_q.scales, self.to_k.scales, self.to_v.scales], axis=0)
+            fused_biases = mx.concatenate([self.to_q.biases, self.to_k.biases, self.to_v.biases], axis=0) if has_bias else None
+            
+            self.to_qkv = nn.QuantizedLinear(input_dims, output_dims * 3, bias=has_bias, bits=bits, group_size=group_size)
+            self.to_qkv.weight = fused_weight
+            self.to_qkv.scales = fused_scales
+            if has_bias:
+                self.to_qkv.biases = fused_biases
+        else:
+            w_q = self.to_q.weight
+            w_k = self.to_k.weight
+            w_v = self.to_v.weight
+
+            # 네 로컬 weight layout 기준 정답
+            fused_weight = mx.concatenate([w_q, w_k, w_v], axis=1).T
+
+            out_dim, in_dim = fused_weight.shape
+            self.to_qkv = nn.Linear(in_dim, out_dim, bias=False)
+            self.to_qkv.weight = fused_weight
+
         del self.to_q, self.to_k, self.to_v
 
     def _get_fused_args_cached(self, positions):

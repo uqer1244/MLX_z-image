@@ -15,6 +15,9 @@ from mlx_z_image import ZImageTransformerMLX
 from mlx_text_encoder import TextEncoderMLX
 from lora_utils import apply_lora
 
+from qkv_fusion_debug import inspect_attention, try_fuse_qkv
+
+
 
 def create_coordinate_grid(size, start):
     d0, d1, d2 = size
@@ -109,9 +112,10 @@ class ZImagePipeline:
         self.text_encoder_path = text_encoder_path
         self.repo_id = repo_id
 
-        self.model_path = model_path
-        self.text_encoder_path = text_encoder_path
-        self.repo_id = repo_id
+        # Caching properties for grid and RoPE
+        self._pos_cache_key = None
+        self._pos_cache = None
+        self._rope_cache = None
 
         if not os.path.exists(self.model_path):
             print(f"Enabling High-Speed Download (hf_transfer)...")
@@ -215,6 +219,10 @@ class ZImagePipeline:
             model = apply_lora(model, lora_path, scale=lora_scale)
             print("Done")
 
+        print(f"Fusing QKV projection layers...", end=" ", flush=True)
+        model.fuse_model()
+        print("Done")
+
         model.eval()
         print(f"Done ({time.time() - t_start:.2f}s)")
 
@@ -237,15 +245,26 @@ class ZImagePipeline:
 
         total_len = cap_feats_mx.shape[1]
         H_tok, W_tok = (height // 8) // 2, (width // 8) // 2
-        img_pos = mx.array(
-            create_coordinate_grid((1, H_tok, W_tok), (total_len + 1, 0, 0)).reshape(-1, 3)[None]).astype(mx.bfloat16)
-        cap_pos = mx.array(create_coordinate_grid((total_len, 1, 1), (1, 0, 0)).reshape(-1, 3)[None]).astype(
-            mx.bfloat16)
+        
+        cache_key = (width, height, total_len)
+        if self._pos_cache_key == cache_key and self._pos_cache is not None:
+            img_pos, cap_pos = self._pos_cache
+            cos_cached, sin_cached = self._rope_cache
+        else:
+            img_pos = mx.array(
+                create_coordinate_grid((1, H_tok, W_tok), (total_len + 1, 0, 0)).reshape(-1, 3)[None]).astype(mx.bfloat16)
+            cap_pos = mx.array(create_coordinate_grid((total_len, 1, 1), (1, 0, 0)).reshape(-1, 3)[None]).astype(
+                mx.bfloat16)
 
-        unified_pos_all = mx.concatenate([img_pos, cap_pos], axis=1)
-        cos_cached, sin_cached = model.prepare_rope(unified_pos_all)
-        cos_cached = cos_cached.astype(mx.bfloat16)
-        sin_cached = sin_cached.astype(mx.bfloat16)
+            unified_pos_all = mx.concatenate([img_pos, cap_pos], axis=1)
+            cos_cached, sin_cached = model.prepare_rope(unified_pos_all)
+            cos_cached = cos_cached.astype(mx.bfloat16)
+            sin_cached = sin_cached.astype(mx.bfloat16)
+            
+            # Update cache
+            self._pos_cache_key = cache_key
+            self._pos_cache = (img_pos, cap_pos)
+            self._rope_cache = (cos_cached, sin_cached)
 
         @mx.compile
         def step_fn(x, t, feats, i_pos, c_pos, cos, sin):
