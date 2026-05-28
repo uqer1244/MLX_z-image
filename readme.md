@@ -48,38 +48,29 @@ Uncurated samples generated directly on a Mac using the 4-bit quantized model.
 
 ## Technical Highlights
 
-I implemented a **Single-Stream Z-Image Transformer** fully based on MLX, optimizing specifically for the **Unified Memory Architecture** of Apple Silicon.
+We implemented a **Single-Stream Z-Image Transformer** fully based on MLX, optimizing specifically for the **Unified Memory Architecture** of Apple Silicon.
 
-### 1. Linear Projection Fusion (QKV Optimization)
-In standard PyTorch implementations, Q, K, and V projections are often performed sequentially:
+### 1. 4-Bit Quantized Linear Projection Fusion (QKV Optimization)
+In standard implementations, Q, K, and V projections are performed sequentially, creating multiple kernel launches and memory reads. While fusing weights in float precision is straightforward, doing so under **4-bit quantization (`nn.QuantizedLinear`)** is highly challenging due to packed `weight` bits, `scales`, and `biases`.
 
-```python
-q = x @ W_q, k = x @ W_k, v = x @ W_v  # 3 Memory Accesses
+We implemented a specialized **Quantized QKV Fusion** that:
+* Concatenates packed `weight` arrays, `scales`, and `biases` along the `output_dims` dimension.
+* Dynamically instantiates a single `nn.QuantizedLinear` layer matching the merged configuration.
+* Fuses the projections into a single high-efficiency kernel launch (`qkv = x @ W_qkv`), saving substantial memory bandwidth.
 
-```
+### 2. Hardware-Accelerated Text Encoder & Transpose Optimization
+We fully optimized the **Text Encoder (`TextEncoderMLX`)** by leveraging hardware-accelerated Metal kernels:
+* **`mx.fast.rope` Acceleration**: Replaced the heavy, Python-loop-based manual 1D RoPE with the native `mx.fast.rope` GPU kernel.
+* **Transpose Minimization**: Reordered operations to apply RoPE directly after the initial transpose `(B, H, L, D)`, eliminating redundant memory-copying transpose steps on the GPU.
 
-I fused these weights into a single tensor to minimize memory reads:
+### 3. Hardware-Accelerated Flash Attention
+We utilize MLX's native kernel `mx.fast.scaled_dot_product_attention`. This operation runs directly on the Apple GPU using optimized Metal kernels, avoiding the creation of large intermediate attention maps, making high-resolution generation extremely light on VRAM.
 
-```python
-qkv = x @ W_qkv  # 1 Memory Access
-
-```
-
-This is crucial for LLMs and Diffusion models on Mac, where **memory bandwidth** often becomes the bottleneck before compute power.
-
-### 2. Hardware-Accelerated Flash Attention
-
-I utilize MLX's native kernel `mx.fast.scaled_dot_product_attention`. This operation runs directly on the GPU using optimized Metal kernels, avoiding the creation of large intermediate attention maps. This allows for higher resolution generation without OOM (Out Of Memory) errors.
-
-### 3. Loop-Invariant RoPE Caching
-
-The denoising process involves iterative steps, but the **spatial grid (H, W)** of the image latent remains constant. Instead of recalculating rotary embeddings at every step.
-
-* **Pre-compute** Cosine/Sine tables for the maximum sequence length before the loop.
-* **Cache** them in VRAM.
-* **Pass** the cached tensors to the compiled step function.
-
-This reduces the computational overhead of the `ApplyRoPE` operation to near zero during sampling.
+### 4. Parametric Coordinate Grid & RoPE Caching
+The denoising process requires spatial coordinate grids and 3D RoPE cos/sin values. Instead of recalculating them at every denoising step, or recreating them on every single run:
+* We implement **Parametric Grid Caching** using a `(width, height, total_len)` key.
+* The first run pre-computes the coordinate grids and 3D RoPE tables, caching them in Unified Memory.
+* Subsequent generations at the same resolution completely bypass the recreation overhead, driving grid-generation latency to **zero**.
 
 
 ## Installation
