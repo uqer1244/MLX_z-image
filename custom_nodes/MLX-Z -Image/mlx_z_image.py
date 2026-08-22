@@ -2,6 +2,8 @@ import mlx.core as mx
 import mlx.nn as nn
 import math
 
+from lora_utils import LoRALinearWrapper, merge_pairs
+
 
 class RMSNorm(nn.Module):
     def __init__(self, dims: int, eps: float = 1e-6):
@@ -65,11 +67,43 @@ class Attention(nn.Module):
 
     def fuse_qkv(self):
         if self.to_qkv is not None: return
-        w_q, w_k, w_v = self.to_q.weight, self.to_k.weight, self.to_v.weight
-        fused_weight = mx.concatenate([w_q, w_k, w_v], axis=0)
-        in_dim, out_dim = self.to_q.weight.shape[1], self.to_q.weight.shape[0] * 3
-        self.to_qkv = nn.Linear(in_dim, out_dim, bias=False)
-        self.to_qkv.weight = fused_weight
+
+        layers = [self.to_q, self.to_k, self.to_v]
+        wrapped_flags = [isinstance(l, LoRALinearWrapper) for l in layers]
+        # Unwrap: fusion always operates on the base layers
+        bases = [l.base_layer if w else l for l, w in zip(layers, wrapped_flags)]
+        # Keep per-slot LoRA pairs so the fused output slices stay aligned (q|k|v)
+        slot_pairs = [l.lora_pairs if w else [] for l, w in zip(layers, wrapped_flags)]
+
+        if isinstance(bases[0], nn.QuantizedLinear):
+            bits = bases[0].bits
+            group_size = bases[0].group_size
+            num_groups = bases[0].scales.shape[1]
+            input_dims = num_groups * group_size
+            output_dims = bases[0].weight.shape[0]
+
+            has_bias = hasattr(bases[0], "biases")
+
+            fused_weight = mx.concatenate([b.weight for b in bases], axis=0)
+            fused_scales = mx.concatenate([b.scales for b in bases], axis=0)
+            fused_biases = mx.concatenate([b.biases for b in bases], axis=0) if has_bias else None
+
+            self.to_qkv = nn.QuantizedLinear(input_dims, output_dims * 3, bias=has_bias, bits=bits, group_size=group_size)
+            self.to_qkv.weight = fused_weight
+            self.to_qkv.scales = fused_scales
+            if has_bias:
+                self.to_qkv.biases = fused_biases
+        else:
+            w_q, w_k, w_v = (b.weight for b in bases)
+            fused_weight = mx.concatenate([w_q, w_k, w_v], axis=0)
+            in_dim, out_dim = bases[0].weight.shape[1], bases[0].weight.shape[0] * 3
+            self.to_qkv = nn.Linear(in_dim, out_dim, bias=False)
+            self.to_qkv.weight = fused_weight
+
+        if any(wrapped_flags):
+            # One merged pair per wrapped slot, concatenated as q|k|v slices
+            fused_pairs = [merge_pairs(pairs) for pairs in slot_pairs if pairs]
+            self.to_qkv = LoRALinearWrapper(self.to_qkv, fused_pairs, output_mode="concat")
         del self.to_q, self.to_k, self.to_v
 
     def _get_fused_args_cached(self, positions):

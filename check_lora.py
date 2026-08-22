@@ -55,15 +55,7 @@ def main():
     parser.add_argument("--path", type=str, help="Path to .safetensors or .pt file")
     args = parser.parse_args()
 
-    if not os.path.exists(args.path):
-        print(f"File not found: {args.path}")
-        return
-
-    if args.path.endswith(".safetensors"):
-        analyze_safetensors(args.path)
-    else:
-        analyze_torch(args.path)
-
+    analyze_safetensors("lora/Z-blackgold-style.safetensors")
 
 if __name__ == "__main__":
     main()

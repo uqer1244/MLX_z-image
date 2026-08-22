@@ -233,10 +233,9 @@ class ZImagePipeline:
 
         scheduler = MLXFlowMatchEulerScheduler(shift=3.0, use_dynamic_shifting=True)
 
-        latents_np = np.random.randn(1, 16, height // 8, width // 8).astype(np.float32)
         if seed is not None:
             np.random.seed(seed)
-            latents_np = np.random.randn(1, 16, height // 8, width // 8).astype(np.float32)
+        latents_np = np.random.randn(1, 16, height // 8, width // 8).astype(np.float32)
 
         latents = mx.array(latents_np).astype(mx.bfloat16)
 

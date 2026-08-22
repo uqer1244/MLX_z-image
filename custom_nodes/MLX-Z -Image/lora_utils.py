@@ -7,36 +7,55 @@ from safetensors import safe_open
 
 
 class LoRALinearWrapper(nn.Module):
-    def __init__(self, base_layer, lora_a, lora_b, scale=1.0):
+    def __init__(self, base_layer, lora_pairs, output_mode="sum"):
         super().__init__()
         self.base_layer = base_layer
-        self.lora_a = lora_a
-        self.lora_b = lora_b
-        self.scale = scale
+        # List of (lora_a, lora_b, scale).
+        # "sum": multiple adapters on the same layer are added (LoRA re-hit).
+        # "concat": pairs fill consecutive output slices (fused QKV);
+        #           unwrapped slots are padded with zeros.
+        self.lora_pairs = lora_pairs
+        self.output_mode = output_mode
 
     def __call__(self, x):
         base_out = self.base_layer(x)
 
-        # MLX LoRA calculation
-        # x @ A.T @ B.T * scale
+        outs = []
+        for a, b, scale in self.lora_pairs:
+            xa = x.astype(a.dtype)
 
-        dtype = x.dtype
-        x = x.astype(self.lora_a.dtype)
+            # Shape Auto-Correction (Auto-Transpose)
+            # A (Down): Should be (In, Rank) (Must match the last dimension of input x)
+            if a.shape[0] != xa.shape[-1]:
+                a = a.T
 
-        # Shape Auto-Correction (Auto-Transpose)
-        a = self.lora_a
-        b = self.lora_b
+            # B (Up): Should be (Rank, Out) (Must match the last dimension of A)
+            if b.shape[0] != a.shape[-1]:
+                b = b.T
 
-        # A (Down): Should be (In, Rank) (Must match the last dimension of input x)
-        if a.shape[0] != x.shape[-1]:
-            a = a.T
+            outs.append(((xa @ a @ b) * scale).astype(base_out.dtype))
 
-        # B (Up): Should be (Rank, Out) (Must match the last dimension of A)
-        if b.shape[0] != a.shape[-1]:
-            b = b.T
+        if self.output_mode == "concat":
+            lora_out = mx.concatenate(outs, axis=-1)
+            # Partial wrapping (e.g. only Q has a LoRA): pad unwrapped slots with zeros
+            if lora_out.shape[-1] != base_out.shape[-1]:
+                pad = base_out.shape[-1] - lora_out.shape[-1]
+                zeros = mx.zeros(base_out.shape[:-1] + (pad,), dtype=base_out.dtype)
+                lora_out = mx.concatenate([lora_out, zeros], axis=-1)
+        else:
+            lora_out = outs[0]
+            for extra in outs[1:]:
+                lora_out = lora_out + extra
 
-        lora_out = (x @ a @ b) * self.scale
-        return base_out + lora_out.astype(dtype)
+        return base_out + lora_out
+
+
+def merge_pairs(pairs):
+    """Collapse several adapters on one layer into a single (a, b, 1.0) pair:
+    x @ a1 @ (b1*s1) + x @ a2 @ (b2*s2) == x @ [a1|a2] @ [b1*s1; b2*s2]."""
+    a = mx.concatenate([p[0] for p in pairs], axis=-1)
+    b = mx.concatenate([p[1] * p[2] for p in pairs], axis=0)
+    return (a, b, 1.0)
 
 
 def get_module_by_name(model, module_name):
@@ -177,6 +196,7 @@ def apply_lora(model, lora_path, scale=1.0):
             lora_groups[base][type_] = tensors[key]
 
     applied_count = 0
+    unmatched = []
     print(f"   [LoRA] Applying adapters with Alpha scaling...")
 
     for lora_key, group in lora_groups.items():
@@ -207,25 +227,24 @@ def apply_lora(model, lora_path, scale=1.0):
             # Final Scale = User Input Scale * (Alpha / Rank)
             final_scale = scale * scale_factor
 
-            # 4. Apply Wrapper
+            # 4. Apply Wrapper (merge into the existing wrapper when a layer is hit twice)
+            new_pair = (lora_a, lora_b, final_scale)
             if isinstance(target, LoRALinearWrapper):
-                base = target.base_layer
+                target.lora_pairs.append(new_pair)
             else:
-                base = target
-
-            # Wrap the layer
-            wrapped = LoRALinearWrapper(base, lora_a, lora_b, final_scale)
-            set_module_by_name(model, final_key, wrapped)
+                wrapped = LoRALinearWrapper(target, [new_pair])
+                set_module_by_name(model, final_key, wrapped)
             applied_count += 1
         else:
-            # For Debugging: Log failed matches (Uncomment if needed)
-            # if "attention" in final_key:
-            #    print(f"   ⚠ Unmatched: {lora_key} -> {final_key}")
-            pass
+            unmatched.append(final_key)
 
+    total_groups = len(lora_groups)
     if applied_count == 0:
         print("    Failed to apply any layers. Naming mismatch suspected.")
     else:
-        print(f"   [LoRA] Applied {applied_count} layers. (Logic: Auto-Alpha & Rename)")
+        print(f"   [LoRA] Applied {applied_count}/{total_groups} layers. (Logic: Auto-Alpha & Rename)")
+        if unmatched:
+            sample = ", ".join(unmatched[:3])
+            print(f"   [LoRA] ⚠ {len(unmatched)} layers unmatched (e.g. {sample})")
 
     return model
